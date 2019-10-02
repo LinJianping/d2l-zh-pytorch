@@ -1,3 +1,7 @@
+# 说明
+
+此版本为李沐大神《动手学深度学习》的pytorch版本
+
 # 动手学深度学习
 
 [![Build Status](http://ci.d2l.ai/job/d2l-zh/job/master/badge/icon)](http://ci.d2l.ai/job/d2l-zh/job/master/)  
