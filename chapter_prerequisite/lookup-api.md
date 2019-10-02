@@ -1,62 +1,68 @@
 # 查阅文档
 
-受篇幅所限，本书无法对所有用到的MXNet函数和类一一详细介绍。读者可以查阅相关文档来做更深入的了解。
+受篇幅所限，本书无法对所有用到的Pytorch函数和类一一详细介绍。读者可以查阅相关文档来做更深入的了解。
 
 ## 查找模块里的所有函数和类
 
-当我们想知道一个模块里面提供了哪些可以调用的函数和类的时候，可以使用`dir`函数。下面我们打印`nd.random`模块中所有的成员或属性。
+当我们想知道一个模块里面提供了哪些可以调用的函数和类的时候，可以使用`dir`函数。下面我们打印`torch.randn`模块中所有的成员或属性。
 
 ```{.python .input  n=1}
-from mxnet import nd
+import torch
 
-print(dir(nd.random))
+print(dir(torch.randn))
+```
+
+```{.json .output n=1}
+[
+ {
+  "name": "stdout",
+  "output_type": "stream",
+  "text": "['__call__', '__class__', '__delattr__', '__dir__', '__doc__', '__eq__', '__format__', '__ge__', '__getattribute__', '__gt__', '__hash__', '__init__', '__init_subclass__', '__le__', '__lt__', '__module__', '__name__', '__ne__', '__new__', '__qualname__', '__reduce__', '__reduce_ex__', '__repr__', '__self__', '__setattr__', '__sizeof__', '__str__', '__subclasshook__', '__text_signature__']\n"
+ }
+]
 ```
 
 通常我们可以忽略掉由`__`开头和结尾的函数（Python的特别对象）或者由`_`开头的函数（一般为内部函数）。通过其余成员的名字我们大致猜测出这个模块提供了各种随机数的生成方法，包括从均匀分布采样（`uniform`）、从正态分布采样（`normal`）、从泊松分布采样（`poisson`）等。
 
 ## 查找特定函数和类的使用
 
-想了解某个函数或者类的具体用法时，可以使用`help`函数。让我们以`NDArray`中的`ones_like`函数为例，查阅它的用法。
+想了解某个函数或者类的具体用法时，可以使用`help`函数。让我们以`torch`中的`ones_like`函数为例，查阅它的用法。
 
-```{.python .input}
-help(nd.ones_like)
+```{.python .input  n=2}
+help(torch.ones_like)
 ```
 
-从文档信息我们了解到，`ones_like`函数会创建和输入`NDArray`形状相同且元素为1的新`NDArray`。我们可以验证一下：
+```{.json .output n=2}
+[
+ {
+  "name": "stdout",
+  "output_type": "stream",
+  "text": "Help on built-in function ones_like:\n\nones_like(...)\n    ones_like(input, dtype=None, layout=None, device=None, requires_grad=False) -> Tensor\n    \n    Returns a tensor filled with the scalar value `1`, with the same size as\n    :attr:`input`. ``torch.ones_like(input)`` is equivalent to\n    ``torch.ones(input.size(), dtype=input.dtype, layout=input.layout, device=input.device)``.\n    \n    .. warning::\n        As of 0.4, this function does not support an :attr:`out` keyword. As an alternative,\n        the old ``torch.ones_like(input, out=output)`` is equivalent to\n        ``torch.ones(input.size(), out=output)``.\n    \n    Args:\n        input (Tensor): the size of :attr:`input` will determine size of the output tensor\n        dtype (:class:`torch.dtype`, optional): the desired data type of returned Tensor.\n            Default: if ``None``, defaults to the dtype of :attr:`input`.\n        layout (:class:`torch.layout`, optional): the desired layout of returned tensor.\n            Default: if ``None``, defaults to the layout of :attr:`input`.\n        device (:class:`torch.device`, optional): the desired device of returned tensor.\n            Default: if ``None``, defaults to the device of :attr:`input`.\n        requires_grad (bool, optional): If autograd should record operations on the\n            returned tensor. Default: ``False``.\n    \n    Example::\n    \n        >>> input = torch.empty(2, 3)\n        >>> torch.ones_like(input)\n        tensor([[ 1.,  1.,  1.],\n                [ 1.,  1.,  1.]])\n\n"
+ }
+]
+```
 
-```{.python .input}
-x = nd.array([[0, 0, 0], [2, 2, 2]])
-y = x.ones_like()
+从文档信息我们了解到，`ones_like`函数会创建和输入`Tensor`形状相同且元素为1的新`Tensor`。我们可以验证一下：
+
+```{.python .input  n=5}
+x = torch.tensor([[0, 0, 0], [2, 2, 2]])
+y = torch.ones_like(x)
 y
 ```
 
-在Jupyter记事本里，我们可以使用`?`来将文档显示在另外一个窗口中。例如，使用`nd.random.uniform?`将得到与`help(nd.random.uniform)`几乎一样的内容，但会显示在额外窗口里。此外，如果使用`nd.random.uniform??`，那么会额外显示该函数实现的代码。
+```{.json .output n=5}
+[
+ {
+  "data": {
+   "text/plain": "tensor([[1, 1, 1],\n        [1, 1, 1]])"
+  },
+  "execution_count": 5,
+  "metadata": {},
+  "output_type": "execute_result"
+ }
+]
+```
 
+```{.python .input}
 
-## 在MXNet网站上查阅
-
-读者也可以在MXNet的网站上查阅相关文档。访问MXNet网站 [http://mxnet.apache.org/](http://mxnet.apache.org/) （如图2.1所示），点击网页顶部的下拉菜单“API”可查阅各个前端语言的接口。此外，也可以在网页右上方含“Search”字样的搜索框中直接搜索函数或类名称。
-
-![MXNet官方网站](../img/mxnet-website.png)
-
-图2.2展示了MXNet网站上有关`ones_like`函数的文档。
-
-![MXNet网站上有关`ones_like`函数的文档](../img/ones_like.png)
-
-
-## 小结
-
-* 遇到不熟悉的MXNet API时，可以主动查阅它的相关文档。
-* 查阅MXNet文档可以使用`dir`和`help`函数，或访问MXNet官方网站。
-
-
-## 练习
-
-* 查阅`NDArray`支持的其他操作。
-
-
-
-
-## 扫码直达[讨论区](https://discuss.gluon.ai/t/topic/7116)
-
-![](../img/qr_lookup-api.svg)
+```
