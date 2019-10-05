@@ -89,30 +89,56 @@ $$
 
 下面先定义两个1000维的向量。
 
-```{.python .input  n=1}
-from mxnet import nd
+```{.python .input  n=2}
+import torch
 from time import time
 
-a = nd.ones(shape=1000)
-b = nd.ones(shape=1000)
+a = torch.ones(1000)
+b = torch.ones(1000)
 ```
 
 向量相加的一种方法是，将这两个向量按元素逐一做标量加法。
 
-```{.python .input  n=2}
+```{.python .input  n=3}
 start = time()
-c = nd.zeros(shape=1000)
+c = torch.zeros(1000)
 for i in range(1000):
     c[i] = a[i] + b[i]
 time() - start
 ```
 
+```{.json .output n=3}
+[
+ {
+  "data": {
+   "text/plain": "0.02894735336303711"
+  },
+  "execution_count": 3,
+  "metadata": {},
+  "output_type": "execute_result"
+ }
+]
+```
+
 向量相加的另一种方法是，将这两个向量直接做矢量加法。
 
-```{.python .input  n=3}
+```{.python .input  n=4}
 start = time()
 d = a + b
 time() - start
+```
+
+```{.json .output n=4}
+[
+ {
+  "data": {
+   "text/plain": "0.00017142295837402344"
+  },
+  "execution_count": 4,
+  "metadata": {},
+  "output_type": "execute_result"
+ }
+]
 ```
 
 结果很明显，后者比前者更省时。因此，我们应该尽可能采用矢量计算，以提升计算效率。
@@ -151,10 +177,23 @@ $$
 
 对3个房屋样本预测价格的矢量计算表达式为$\boldsymbol{\hat{y}} = \boldsymbol{X} \boldsymbol{w} + b,$ 其中的加法运算使用了广播机制（参见[“数据操作”](../chapter_prerequisite/ndarray.md)一节）。例如：
 
-```{.python .input  n=4}
-a = nd.ones(shape=3)
+```{.python .input  n=5}
+a = torch.ones(3)
 b = 10
 a + b
+```
+
+```{.json .output n=5}
+[
+ {
+  "data": {
+   "text/plain": "tensor([11., 11., 11.])"
+  },
+  "execution_count": 5,
+  "metadata": {},
+  "output_type": "execute_result"
+ }
+]
 ```
 
 广义上讲，当数据样本数为$n$，特征数为$d$时，线性回归的矢量计算表达式为

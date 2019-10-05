@@ -5,8 +5,7 @@
 ```{.python .input  n=9}
 %matplotlib inline
 import d2lzh as d2l
-from mxnet import nd
-from mxnet.gluon import loss as gloss
+
 ```
 
 ## 获取和读取数据
@@ -25,14 +24,6 @@ train_iter, test_iter = d2l.load_data_fashion_mnist(batch_size)
 ```{.python .input  n=3}
 num_inputs, num_outputs, num_hiddens = 784, 10, 256
 
-W1 = nd.random.normal(scale=0.01, shape=(num_inputs, num_hiddens))
-b1 = nd.zeros(num_hiddens)
-W2 = nd.random.normal(scale=0.01, shape=(num_hiddens, num_outputs))
-b2 = nd.zeros(num_outputs)
-params = [W1, b1, W2, b2]
-
-for param in params:
-    param.attach_grad()
 ```
 
 ## 定义激活函数
@@ -41,7 +32,7 @@ for param in params:
 
 ```{.python .input  n=4}
 def relu(X):
-    return nd.maximum(X, 0)
+
 ```
 
 ## 定义模型
@@ -50,9 +41,7 @@ def relu(X):
 
 ```{.python .input  n=5}
 def net(X):
-    X = X.reshape((-1, num_inputs))
-    H = relu(nd.dot(X, W1) + b1)
-    return nd.dot(H, W2) + b2
+
 ```
 
 ## 定义损失函数
@@ -88,7 +77,3 @@ d2l.train_ch3(net, train_iter, test_iter, loss, num_epochs, batch_size,
 ## 扫码直达[讨论区](https://discuss.gluon.ai/t/topic/739)
 
 ![](../img/qr_mlp-scratch.svg)
-
-```{.python .input}
-
-```
