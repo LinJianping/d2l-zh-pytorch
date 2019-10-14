@@ -395,7 +395,3 @@ print(net[2][0].weight==net[3][0].weight)
 ## 扫码直达[讨论区](https://discuss.gluon.ai/t/topic/987)
 
 ![](../img/qr_parameters.svg)
-
-```{.python .input}
-
-```

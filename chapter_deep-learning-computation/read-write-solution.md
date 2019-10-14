@@ -162,7 +162,3 @@ Y2 == Y
 ## 扫码直达[讨论区](https://discuss.gluon.ai/t/topic/1255)
 
 ![](../img/qr_read-write.svg)
-
-```{.python .input}
-
-```

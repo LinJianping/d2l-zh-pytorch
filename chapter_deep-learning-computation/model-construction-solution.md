@@ -220,7 +220,3 @@ net(X)
 ## 扫码直达[讨论区](https://discuss.gluon.ai/t/topic/986)
 
 ![](../img/qr_model-construction.svg)
-
-```{.python .input}
-
-```
