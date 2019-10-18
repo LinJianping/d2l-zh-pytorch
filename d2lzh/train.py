@@ -59,64 +59,114 @@ def sgd(params, lr, batch_size):
         param.data.sub_(lr*param.grad/batch_size)
         param.grad.data.zero_()
 
+# def train_and_predict_rnn(rnn, get_params, init_rnn_state, num_hiddens,
+#                           corpus_indices, vocab, device, is_random_iter,
+#                           num_epochs, num_steps, lr, clipping_theta,
+#                           batch_size, prefixes):
+#     """Train an RNN model and predict the next item in the sequence."""
+#     if is_random_iter:
+#         data_iter_fn = data_iter_random
+#     else:
+#         data_iter_fn = data_iter_consecutive
+#     params = get_params()
+#     loss =  nn.CrossEntropyLoss()
+#     start = time.time()
+#     for epoch in range(num_epochs):
+#         if not is_random_iter:
+#             # If adjacent sampling is used, the hidden state is initialized
+#             # at the beginning of the epoch
+#             state = init_rnn_state(batch_size, num_hiddens, device)
+#         l_sum, n = 0.0, 0
+#         data_iter = data_iter_fn(corpus_indices, batch_size, num_steps, device)
+#         for X, Y in data_iter:
+#             if is_random_iter:
+#                 # If random sampling is used, the hidden state is initialized
+#                 # before each mini-batch update
+#                 state = init_rnn_state(batch_size, num_hiddens, device)
+#             else:
+#                 # Otherwise, the detach function needs to be used to separate
+#                 # the hidden state from the computational graph to avoid
+#                 # backpropagation beyond the current sample
+#                 for s in state:
+#                     s.detach_()
+#             inputs = to_onehot(X, len(vocab))
+#             # outputs is num_steps terms of shape (batch_size, len(vocab))
+#             (outputs, state) = rnn(inputs, state, params)
+#             # After stitching it is (num_steps * batch_size, len(vocab))
+#             outputs = torch.cat(outputs, dim=0)
+#             # The shape of Y is (batch_size, num_steps), and then becomes
+#             # a vector with a length of batch * num_steps after
+#             # transposition. This gives it a one-to-one correspondence
+#             # with output rows
+#             y = Y.t().reshape((-1,))
+#             # Average classification error via cross entropy loss
+#             l = loss(outputs, y.long()).mean()
+#             l.backward()
+#             with torch.no_grad():
+#                 grad_clipping(params, clipping_theta, device)  # Clip the gradient
+#                 sgd(params, lr, 1)
+#             # Since the error is the mean, no need to average gradients here
+#             l_sum += l.item() * y.numel()
+#             n += y.numel()
+#         if (epoch + 1) % 50 == 0:
+#             print('epoch %d, perplexity %f, time %.2f sec' % (
+#                 epoch + 1, math.exp(l_sum / n), time.time() - start))
+#             start = time.time()
+#         if (epoch + 1) % 100 == 0:
+#             for prefix in prefixes:
+#                 print(' -',  predict_rnn(prefix, 50, rnn, params,
+#                                          init_rnn_state, num_hiddens,
+#                                          vocab, device))
+
+# 本函数已保存在d2lzh包中方便以后使用
 def train_and_predict_rnn(rnn, get_params, init_rnn_state, num_hiddens,
-                          corpus_indices, vocab, device, is_random_iter,
-                          num_epochs, num_steps, lr, clipping_theta,
-                          batch_size, prefixes):
-    """Train an RNN model and predict the next item in the sequence."""
+                          vocab_size, device, corpus_indices, idx_to_char,
+                          char_to_idx, is_random_iter, num_epochs, num_steps,
+                          lr, clipping_theta, batch_size, pred_period,
+                          pred_len, prefixes):
     if is_random_iter:
         data_iter_fn = data_iter_random
     else:
         data_iter_fn = data_iter_consecutive
     params = get_params()
-    loss =  nn.CrossEntropyLoss()
-    start = time.time()
+    loss = nn.CrossEntropyLoss()
     for epoch in range(num_epochs):
-        if not is_random_iter:
-            # If adjacent sampling is used, the hidden state is initialized
-            # at the beginning of the epoch
+        if not is_random_iter:  # 如使用相邻采样，在epoch开始时初始化隐藏状态
             state = init_rnn_state(batch_size, num_hiddens, device)
-        l_sum, n = 0.0, 0
+        l_sum, n, start = 0.0, 0, time.time()
         data_iter = data_iter_fn(corpus_indices, batch_size, num_steps, device)
         for X, Y in data_iter:
-            if is_random_iter:
-                # If random sampling is used, the hidden state is initialized
-                # before each mini-batch update
+            if is_random_iter:  # 如使用随机采样，在每个小批量更新前初始化隐藏状态
                 state = init_rnn_state(batch_size, num_hiddens, device)
-            else:
-                # Otherwise, the detach function needs to be used to separate
-                # the hidden state from the computational graph to avoid
-                # backpropagation beyond the current sample
+            else:  # 否则需要使用detach函数从计算图分离隐藏状态
                 for s in state:
                     s.detach_()
-            inputs = to_onehot(X, len(vocab))
-            # outputs is num_steps terms of shape (batch_size, len(vocab))
+            inputs = to_onehot(X, vocab_size)
+            # outputs有num_steps个形状为(batch_size, vocab_size)的矩阵
             (outputs, state) = rnn(inputs, state, params)
-            # After stitching it is (num_steps * batch_size, len(vocab))
+#                 print('outputs', outputs)
+#                 print('state:', state.shape)
+            # 拼接之后形状为(num_steps * batch_size, vocab_size)
             outputs = torch.cat(outputs, dim=0)
-            # The shape of Y is (batch_size, num_steps), and then becomes
-            # a vector with a length of batch * num_steps after
-            # transposition. This gives it a one-to-one correspondence
-            # with output rows
+            # Y的形状是(batch_size, num_steps)，转置后再变成长度为
+            # batch * num_steps 的向量，这样跟输出的行一一对应
             y = Y.t().reshape((-1,))
-            # Average classification error via cross entropy loss
+            # 使用交叉熵损失计算平均分类误差
             l = loss(outputs, y.long()).mean()
             l.backward()
             with torch.no_grad():
-                grad_clipping(params, clipping_theta, device)  # Clip the gradient
-                sgd(params, lr, 1)
-            # Since the error is the mean, no need to average gradients here
+                grad_clipping(params, clipping_theta, device)  # 裁剪梯度
+                sgd(params, lr, 1)  # 因为误差已经取过均值，梯度不用再做平均
             l_sum += l.item() * y.numel()
             n += y.numel()
-        if (epoch + 1) % 50 == 0:
+
+        if (epoch + 1) % pred_period == 0:
             print('epoch %d, perplexity %f, time %.2f sec' % (
                 epoch + 1, math.exp(l_sum / n), time.time() - start))
-            start = time.time()
-        if (epoch + 1) % 100 == 0:
             for prefix in prefixes:
-                print(' -',  predict_rnn(prefix, 50, rnn, params,
-                                         init_rnn_state, num_hiddens,
-                                         vocab, device))
+                print(' -', predict_rnn(
+                    prefix, pred_len, rnn, params, init_rnn_state,
+                    num_hiddens, vocab_size, device, idx_to_char, char_to_idx))
 
 def train_ch3(net, train_iter, test_iter, criterion, num_epochs, batch_size, lr=None):
     """Train and evaluate a model with CPU."""
@@ -229,50 +279,120 @@ def translate_ch7(model, src_sentence, src_vocab, tgt_vocab, max_len, device):
 def to_onehot(X,size):
     return F.one_hot(X.long().transpose(0,-1), size)
 
+# def predict_rnn(prefix, num_chars, rnn, params, init_rnn_state,
+#                 num_hiddens, vocab, device):
+#     """Predict next chars with an RNN model"""
+#     state = init_rnn_state(1, num_hiddens, device)
+#     output = [vocab[prefix[0]]]
+#     for t in range(num_chars + len(prefix) - 1):
+#         # The output of the previous time step is taken as the input of the
+#         # current time step.
+#         X = to_onehot(torch.tensor([output[-1]], dtype=torch.float32, device=device), len(vocab))
+#         # Calculate the output and update the hidden state
+#         (Y, state) = rnn(X, state, params)
+#         # The input to the next time step is the character in the prefix or
+#         # the current best predicted character
+#         if t < len(prefix) - 1:
+#             # Read off from the given sequence of characters
+#             output.append(vocab[prefix[t + 1]])
+#         else:
+#             # This is maximum likelihood decoding. Modify this if you want
+#             # use sampling, beam search or beam sampling for better sequences.
+#             output.append(int(Y[0].argmax(dim=1).item()))
+#     return ''.join([vocab.idx_to_token[i] for i in output])
+# 本函数已保存在d2lzh包中方便以后使用
 def predict_rnn(prefix, num_chars, rnn, params, init_rnn_state,
-                num_hiddens, vocab, device):
-    """Predict next chars with an RNN model"""
+                num_hiddens, vocab_size, device, idx_to_char, char_to_idx):
     state = init_rnn_state(1, num_hiddens, device)
-    output = [vocab[prefix[0]]]
+    output = [char_to_idx[prefix[0]]]
     for t in range(num_chars + len(prefix) - 1):
-        # The output of the previous time step is taken as the input of the
-        # current time step.
-        X = to_onehot(torch.tensor([output[-1]], dtype=torch.float32, device=device), len(vocab))
-        # Calculate the output and update the hidden state
+        # 将上一时间步的输出作为当前时间步的输入
+        X = to_onehot(torch.tensor([output[-1]], device=device), vocab_size)
+        X = X.unsqueeze(dim=0)
+        # 计算输出和更新隐藏状态
         (Y, state) = rnn(X, state, params)
-        # The input to the next time step is the character in the prefix or
-        # the current best predicted character
+        # 下一个时间步的输入是prefix里的字符或者当前的最佳预测字符
         if t < len(prefix) - 1:
-            # Read off from the given sequence of characters
-            output.append(vocab[prefix[t + 1]])
+            output.append(char_to_idx[prefix[t + 1]])
         else:
-            # This is maximum likelihood decoding. Modify this if you want
-            # use sampling, beam search or beam sampling for better sequences.
             output.append(int(Y[0].argmax(dim=1).item()))
-    return ''.join([vocab.idx_to_token[i] for i in output])
+    return ''.join([idx_to_char[i] for i in output])
 
-def predict_rnn_nn(prefix, num_chars, batch_size, num_hiddens, num_layers, model, vocab, device):
+# def predict_rnn_nn(prefix, num_chars, batch_size, num_hiddens, num_layers, model, vocab, device):
+#     """Predict next chars with a RNN model."""
+#     # Use the model's member function to initialize the hidden state
+#     state = model.begin_state(num_hiddens=num_hiddens, device=device, num_layers=num_layers)
+#     output = [vocab[prefix[0]]]
+#     for t in range(num_chars + len(prefix) - 1):
+#         X = torch.tensor([output[-1]], dtype=torch.float32, device=device).reshape((1, 1))
+#         # Forward computation does not require incoming model parameters
+#         (Y, state) = model(X, state)
+#         if t < len(prefix) - 1:
+#             output.append(vocab[prefix[t + 1]])
+#         else:
+#             output.append(int(Y.argmax(dim=1).item()))
+#     return ''.join([vocab.idx_to_token[i] for i in output])
+def predict_rnn_nn(prefix, pred_len, model, num_hiddens, vocab_size, device, idx_to_char, char_to_idx, num_layers=1):
     """Predict next chars with a RNN model."""
     # Use the model's member function to initialize the hidden state
     state = model.begin_state(num_hiddens=num_hiddens, device=device, num_layers=num_layers)
-    output = [vocab[prefix[0]]]
-    for t in range(num_chars + len(prefix) - 1):
+    output = [char_to_idx[prefix[0]]]
+    for t in range(pred_len + len(prefix) - 1):
         X = torch.tensor([output[-1]], dtype=torch.float32, device=device).reshape((1, 1))
         # Forward computation does not require incoming model parameters
         (Y, state) = model(X, state)
         if t < len(prefix) - 1:
-            output.append(vocab[prefix[t + 1]])
+            output.append(char_to_idx[prefix[t + 1]])
         else:
             output.append(int(Y.argmax(dim=1).item()))
-    return ''.join([vocab.idx_to_token[i] for i in output])
+    return ''.join([idx_to_char[i] for i in output])
 
-def train_and_predict_rnn_nn(model, num_hiddens, init_gru_state, corpus_indices, vocab,
-                                device, num_epochs, num_steps, lr,
-                                clipping_theta, batch_size, prefixes, num_layers=1):
+# def train_and_predict_rnn_nn(model, num_hiddens, init_gru_state, corpus_indices, vocab,
+#                                 device, num_epochs, num_steps, lr,
+#                                 clipping_theta, batch_size, prefixes, num_layers=1):
+#     """Train a RNN model and predict the next item in the sequence."""
+#     loss =  nn.CrossEntropyLoss()
+#     optm = torch.optim.SGD(model.parameters(), lr=lr)
+#     start = time.time()
+#     for epoch in range(1, num_epochs+1):
+#         l_sum, n = 0.0, 0
+#         data_iter = data_iter_consecutive(
+#             corpus_indices, batch_size, num_steps, device)
+#         state = model.begin_state(batch_size=batch_size, num_hiddens=num_hiddens, device=device ,num_layers=num_layers)
+#         for X, Y in data_iter:
+#             for s in state:
+#                 s.detach()
+#             X = X.to(dtype=torch.long)
+#             (output, state) = model(X, state)
+#             y = Y.t().reshape((-1,))
+#             l = loss(output, y.long()).mean()
+#             optm.zero_grad()
+#             l.backward(retain_graph=True)
+#             with torch.no_grad():
+#                 # Clip the gradient
+#                 grad_clipping_nn(model, clipping_theta, device)
+#                 # Since the error has already taken the mean, the gradient does
+#                 # not need to be averaged
+#                 optm.step()
+#             l_sum += l.item() * y.numel()
+#             n += y.numel()
+
+#         if epoch % (num_epochs // 4) == 0:
+#             print('epoch %d, perplexity %f, time %.2f sec' % (
+#                 epoch, math.exp(l_sum / n), time.time() - start))
+#             start = time.time()
+#         if epoch % (num_epochs // 2) == 0:
+#             for prefix in prefixes:
+#                 print(' -', predict_rnn_nn(prefix, 50, batch_size, num_hiddens, num_layers, model, vocab, device))
+def train_and_predict_rnn_nn(model, num_hiddens, vocab_size, device,
+                                corpus_indices, idx_to_char, char_to_idx,
+                                num_epochs, num_steps, lr, clipping_theta,
+                                batch_size, pred_period, pred_len, prefixes, num_layers=1):
     """Train a RNN model and predict the next item in the sequence."""
     loss =  nn.CrossEntropyLoss()
-    optm = torch.optim.SGD(model.parameters(), lr=lr)
+    optm = torch.optim.Adam(model.parameters(), lr=lr)
     start = time.time()
+    count = 0
     for epoch in range(1, num_epochs+1):
         l_sum, n = 0.0, 0
         data_iter = data_iter_consecutive(
@@ -302,7 +422,8 @@ def train_and_predict_rnn_nn(model, num_hiddens, init_gru_state, corpus_indices,
             start = time.time()
         if epoch % (num_epochs // 2) == 0:
             for prefix in prefixes:
-                print(' -', predict_rnn_nn(prefix, 50, batch_size, num_hiddens, num_layers, model, vocab, device))
+                print(' -', predict_rnn_nn(
+                    prefix, pred_len, model, num_hiddens, vocab_size, device, idx_to_char, char_to_idx, num_layers))
 
 def train_2d(trainer):
     """Optimize a 2-dim objective function with a customized trainer."""
