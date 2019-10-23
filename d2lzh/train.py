@@ -227,30 +227,58 @@ class MaskedSoftmaxCELoss(nn.CrossEntropyLoss):
         return (output*weights).mean(dim=1)
 
 
-def train_ch7(model, data_iter, lr, num_epochs, device): 
-    """Train an encoder-decoder model"""
-    optimizer = optim.Adam(model.parameters(), lr=lr)
-    loss = MaskedSoftmaxCELoss()
-    tic = time.time()
-    for epoch in range(1, num_epochs+1):
-        l_sum, num_tokens_sum = 0.0, 0.0
-        for batch in data_iter:
-            optimizer.zero_grad()
-            X, X_vlen, Y, Y_vlen = [x.to(device) for x in batch]
-            Y_input, Y_label, Y_vlen = Y[:,:-1], Y[:,1:], Y_vlen-1
-            Y_hat, _ = model(X, Y_input, X_vlen, Y_vlen)
-            l = loss(Y_hat, Y_label, Y_vlen).sum()
+# def train_ch7(model, data_iter, lr, num_epochs, device): 
+#     """Train an encoder-decoder model"""
+#     optimizer = optim.Adam(model.parameters(), lr=lr)
+#     loss = MaskedSoftmaxCELoss()
+#     tic = time.time()
+#     for epoch in range(1, num_epochs+1):
+#         l_sum, num_tokens_sum = 0.0, 0.0
+#         for batch in data_iter:
+#             optimizer.zero_grad()
+#             X, X_vlen, Y, Y_vlen = [x.to(device) for x in batch]
+#             Y_input, Y_label, Y_vlen = Y[:,:-1], Y[:,1:], Y_vlen-1
+#             Y_hat, _ = model(X, Y_input, X_vlen, Y_vlen)
+#             l = loss(Y_hat, Y_label, Y_vlen).sum()
+#             l.backward()
+#             with torch.no_grad():
+#                 grad_clipping_nn(model, 5, device)
+#             num_tokens = Y_vlen.sum().item()
+#             optimizer.step()
+#             l_sum += l.sum().item()
+#             num_tokens_sum += num_tokens
+#         if epoch % 50 == 0:
+#             print("epoch {0:4d},loss {1:.3f}, time {2:.1f} sec".format( 
+#                   epoch, (l_sum/num_tokens_sum), time.time()-tic))
+#             tic = time.time()
+def train_ch7(trainer_fn, states, hyperparams, features, labels,
+              batch_size=10, num_epochs=2):
+    net, loss = linreg, squared_loss
+    w = torch.empty(size=(features.shape[1],1)).normal_(std=0.01)
+    b = torch.zeros(1)
+    w.requires_grad_(True)
+    b.requires_grad_(True)
+    data_iter = torch.utils.data.DataLoader(
+        torch.utils.data.TensorDataset(features, labels), batch_size, shuffle=True)
+    
+    def eval_loss():
+        return loss(net(features, w, b), labels).mean().item()
+    
+    ls = [eval_loss()]
+    for _ in range(num_epochs):
+        start = time.time()
+        for batch_i, (X, y) in enumerate(data_iter):
+            l = loss(net(X, w, b), y).mean()
             l.backward()
-            with torch.no_grad():
-                grad_clipping_nn(model, 5, device)
-            num_tokens = Y_vlen.sum().item()
-            optimizer.step()
-            l_sum += l.sum().item()
-            num_tokens_sum += num_tokens
-        if epoch % 50 == 0:
-            print("epoch {0:4d},loss {1:.3f}, time {2:.1f} sec".format( 
-                  epoch, (l_sum/num_tokens_sum), time.time()-tic))
-            tic = time.time()
+            trainer_fn([w, b], states, hyperparams)
+            if (batch_i + 1) * batch_size % 100 == 0:
+                ls.append(eval_loss())  # 每100个样本记录下当前训练误差
+    # 打印结果和作图
+    print('loss: %f, %f sec per epoch' % (ls[-1], time.time() - start))
+    set_figsize()
+    plt.plot(np.linspace(0, num_epochs, len(ls)), ls)
+    plt.xlabel('epoch')
+    plt.ylabel('loss')       
 
 def translate_ch7(model, src_sentence, src_vocab, tgt_vocab, max_len, device):
     """Translate based on an encoder-decoder model with greedy search."""

@@ -266,7 +266,3 @@ net[0].weight.data
 ## 扫码直达[讨论区](https://discuss.gluon.ai/t/topic/988)
 
 ![](../img/qr_use-gpu.svg)
-
-```{.python .input}
-
-```
