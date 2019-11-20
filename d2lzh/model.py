@@ -102,3 +102,26 @@ class EncoderDecoder(nn.Module):
         dec_state = self.decoder.init_state(enc_outputs, *args)
         return self.decoder(dec_X, dec_state)
 
+class Flatten(nn.Module):
+    def forward(self, input):
+        return input.view(input.size(0), -1)
+    
+def resnet18(input_channels, num_classes):
+    def resnet_block(in_channels, out_channels, num_residuals, first_block=False):
+        blk = []
+        for i in range(num_residuals):
+            if i == 0 and not first_block:
+                blk.append(Residual(in_channels, out_channels, use_1x1conv=True, strides=2))
+            else:
+                blk.append(Residual(out_channels, out_channels))
+        return blk
+    b1 = nn.Sequential(nn.Conv2d(input_channels, 64, kernel_size=7, stride=2, padding=3),
+                    nn.BatchNorm2d(64), 
+                    nn.ReLU(),
+                    nn.MaxPool2d(kernel_size=3, stride=2, padding=1))
+    b2 = nn.Sequential(*resnet_block(64, 64, 2, first_block=True))
+    b3 = nn.Sequential(*resnet_block(64, 128, 2))
+    b4 = nn.Sequential(*resnet_block(128, 256, 2))
+    b5 = nn.Sequential(*resnet_block(256, 512, 2))
+    net = nn.Sequential(b1, b2, b3, b4, b5, nn.AdaptiveAvgPool2d((1,1)), Flatten(), nn.Linear(512, num_classes))
+    return net

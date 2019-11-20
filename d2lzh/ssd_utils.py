@@ -15,7 +15,7 @@ d2lzh = sys.modules[__name__]
 # Defined in file: ./chapter_preface/preface.md
 from matplotlib import pyplot as plt
 
-import d2lzh
+import d2lzh as d2l
 import json
 import time
 from collections import namedtuple
@@ -44,7 +44,7 @@ def show_images(imgs, num_rows, num_cols, titles=None, scale=1.5):
     _, axes = d2l.plt.subplots(num_rows, num_cols, figsize=figsize)
     axes = axes.flatten()
     for i, (ax, img) in enumerate(zip(axes, imgs)):
-        ax.imshow(img.numpy())
+        ax.imshow(img)
         ax.axes.get_xaxis().set_visible(False)
         ax.axes.get_yaxis().set_visible(False)
         if titles:

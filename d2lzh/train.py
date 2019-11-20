@@ -499,3 +499,31 @@ def train_ch10(trainer, hyperparams, data_iter, feature_dim, num_epochs=2):
                 timer.start()
     print('loss: %.3f, %.3f sec/epoch'%(animator.Y[0][-1], timer.avg()))
     # return timer.cumsum(), animator.Y[0]
+    
+def train(train_iter, test_iter, net, loss, trainer, ctx, num_epochs):
+    print('training on', ctx)
+    net.to(ctx)
+    for epoch in range(num_epochs):
+        net.train()
+        train_l_sum, train_acc_sum, n, m, start = 0.0, 0.0, 0, 0, time.time()
+        for Xs, ys in train_iter:
+            trainer.zero_grad()
+            Xs, ys = Xs.to(ctx), ys.to(ctx)
+            y_hats = net(Xs)
+            l = loss(y_hats, ys)
+            l.backward()
+            trainer.step()
+            train_l_sum += l.item()
+            n += Xs.shape[0]
+            train_acc_sum += (y_hats.argmax(dim=1) == ys).sum().item()
+#             print('train_acc_sum', train_acc_sum)
+#             train_l_sum += sum([l.sum().item() for l in ls])
+#             n += sum([l.size(0) for l in ls])
+#             train_acc_sum += sum([(y_hat.argmax(dim=1) == y).sum().item()
+#                                  for y_hat, y in zip(y_hats, ys)])
+#             m += sum([y.size(0) for y in ys])
+        test_acc = evaluate_accuracy(test_iter, net, ctx)
+        print('epoch %d, loss %.4f, train acc %.3f, test acc %.3f, '
+              'time %.1f sec'
+              % (epoch + 1, train_l_sum / n, train_acc_sum / n, test_acc,
+                 time.time() - start))

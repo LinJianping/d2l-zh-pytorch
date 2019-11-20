@@ -24,6 +24,3 @@
    kaggle-gluon-dog
 ```
 
-
-
-

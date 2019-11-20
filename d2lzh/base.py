@@ -13,11 +13,21 @@ def try_gpu():
         device = torch.device('cpu')
     return device
 
+# def try_all_gpus():
+#     """Return all available GPUs, or [torch device cpu] if there is no GPU."""
+#     if torch.cuda.is_available():
+#         devices = []
+#         for i in range(16):
+#             device = torch.device('cuda:'+str(i))
+#             devices.append(device)
+#     else:
+#         devices = [torch.device('cpu')]
+#     return devices
 def try_all_gpus():
     """Return all available GPUs, or [torch device cpu] if there is no GPU."""
     if torch.cuda.is_available():
         devices = []
-        for i in range(16):
+        for i in range(torch.cuda.device_count()):
             device = torch.device('cuda:'+str(i))
             devices.append(device)
     else:
