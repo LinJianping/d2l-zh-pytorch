@@ -22,6 +22,17 @@ from collections import namedtuple
 import cv2
 from IPython import display
 
+##################################### MXNet Functions #################################################
+import mxnet as mx
+from mxnet import nd
+def try_gpu():
+    """If GPU is available, return mx.gpu(0); else return mx.cpu()."""
+    try:
+        ctx = mx.gpu()
+        _ = nd.array([0], ctx=ctx)
+    except mx.base.MXNetError:
+        ctx = mx.cpu()
+    return ctx
 
 ##################################### Display Functions #################################################
 
@@ -89,8 +100,11 @@ def draw_text(img: str, texts: list, locations: list) -> np.ndarray:
 
 ################################ Functions for making an inference on an image using trained model ###########################
 
+# PredBoundingBox = namedtuple("PredBoundingBox", ["probability", "class_id",
+#                                                  "classname", "bounding_box"
+#                                                  ])
 PredBoundingBox = namedtuple("PredBoundingBox", ["probability", "class_id",
-                                                 "classname", "bounding_box"
+                                              "bounding_box"
                                                  ])
 
 def invert_transformation(bb_hat, anchors):
@@ -311,7 +325,7 @@ def download_and_preprocess_data(dir = '../data/pikachu/'):
     
     if os.path.exists(os.path.join(dir, 'train')) and os.path.exists(os.path.join(dir, 'val')):
         return
-
+    batch_size = 1
     train_iter, val_iter = load_data_pikachu_rec_mxnet(batch_size)
     
     os.mkdir(os.path.join(dir, 'train'))
@@ -321,6 +335,7 @@ def download_and_preprocess_data(dir = '../data/pikachu/'):
     
     annotations_train = dict()
     train_iter.reset()  # Read data from the start.
+    ctx = try_gpu()
     id = 0
     for batch in train_iter:
         id+=1
@@ -481,7 +496,8 @@ def center_2_hw(box: torch.Tensor) -> float:
 
 def intersect(box_a: torch.Tensor, box_b: torch.Tensor) -> float:
     # Coverting (cx, cy, w, h) to (x1, y1, x2, y2) since its easier to extract min/max coordinates
-    temp_box_a, temp_box_b = center_2_hw(box_a), center_2_hw(box_b)
+#     temp_box_a, temp_box_b = center_2_hw(box_a), center_2_hw(box_b)
+    temp_box_a, temp_box_b = box_a, box_b
     
 #     print(temp_box_a.shape)
     
@@ -492,7 +508,8 @@ def intersect(box_a: torch.Tensor, box_b: torch.Tensor) -> float:
     return inter[:, :, 0] * inter[:, :, 1]
 
 def box_area(box: torch.Tensor) -> float:
-    return box[:, 2] * box[:, 3]
+#     return box[:, 2] * box[:, 3]
+    return (box[:, 2]-box[:, 0]) * (box[:, 3]-box[:, 1])
 
 def jaccard(box_a: torch.Tensor, box_b: torch.Tensor) -> float:
 #     print(box_a.shape)
@@ -553,37 +570,93 @@ def load(model, path_to_checkpoint, optimizer):
 
 import itertools
 import math
-def MultiBoxPrior(feature_map_sizes, sizes, aspect_ratios):
-    """Compute default box sizes with scale and aspect transform."""
+# def MultiBoxPrior(feature_map_sizes, sizes, aspect_ratios):
+#     """Compute default box sizes with scale and aspect transform."""
     
-    sizes = [s*728 for s in sizes]
+#     sizes = [s*728 for s in sizes]
     
-    scale = feature_map_sizes
-    steps_y = [1 / scale[0]]
-    steps_x = [1 / scale[1]]
+#     scale = feature_map_sizes
+#     steps_y = [1 / scale[0]]
+#     steps_x = [1 / scale[1]]
     
-    sizes = [s / max(scale) for s in sizes]
+#     sizes = [s / max(scale) for s in sizes]
     
-    num_layers = 1
+#     num_layers = 1
+
+#     boxes = []
+#     for i in range(num_layers):
+#         for h, w in itertools.product(range(feature_map_sizes[0]), range(feature_map_sizes[1])):
+#             cx = (w + 0.5)*steps_x[i]
+#             cy = (h + 0.5)*steps_y[i]
+            
+#             for j in range(len(sizes)):
+
+#                 s = sizes[j]
+#                 boxes.append((cx, cy, s, s))
+
+#             s = sizes[0]
+            
+#             for ar in aspect_ratios:
+               
+#                 boxes.append((cx, cy, (s * math.sqrt(ar)), (s / math.sqrt(ar))))
+
+#     return torch.Tensor(boxes) 
+
+def MultiBoxPrior(data=None, sizes=[1], ratios=[1], clip=False, steps=[-1,-1], offsets=[0.5, 0.5]):
+    '''
+    Parameters:
+    data (Tensor) – Input data.
+
+    sizes (tuple of <float>, optional, default=[1]) – List of sizes of generated MultiBoxPriores.
+
+    ratios (tuple of <float>, optional, default=[1]) – List of aspect ratios of generated MultiBoxPriores.
+
+    clip (boolean, optional, default=0) – Whether to clip out-of-boundary boxes.
+
+    steps (tuple of <float>, optional, default=[-1,-1]) – Priorbox step across y and x, -1 for auto calculation.
+
+    offsets (tuple of <float>, optional, default=[0.5,0.5]) – Priorbox center offsets, y and x respectively
+
+    out (Tensor, optional) – The output Tensor to hold the result.
+
+    Returns
+    out – The output of this function.
+
+    Return type
+    Tensor or list of Tensor
+    '''
+    in_height = data.shape[-2]
+    in_width = data.shape[-1]
+    step_x = steps[1]
+    step_y = steps[0]
+    if steps[0] == -1:
+        step_y = 1 / in_height
+    if steps[1] == -1:
+        step_x = 1 / in_width
+    scale_min = min(in_height, in_width)
+
+    num_sizes = len(sizes)
+    num_ratios = len(ratios)
 
     boxes = []
-    for i in range(num_layers):
-        for h, w in itertools.product(range(feature_map_sizes[0]), range(feature_map_sizes[1])):
-            cx = (w + 0.5)*steps_x[i]
-            cy = (h + 0.5)*steps_y[i]
-            
-            for j in range(len(sizes)):
-
-                s = sizes[j]
-                boxes.append((cx, cy, s, s))
-
-            s = sizes[0]
-            
-            for ar in aspect_ratios:
-               
-                boxes.append((cx, cy, (s * math.sqrt(ar)), (s / math.sqrt(ar))))
-
-    return torch.Tensor(boxes) 
+    
+    for r in range(in_height):
+        center_y = (r + offsets[0]) * step_y
+        for c in range(in_width):
+            center_x = (c + offsets[1]) * step_x
+            ratio = math.sqrt(ratios[0]) if num_ratios > 0 else 1.0
+            for i in range(num_sizes):
+                size = sizes[i]
+                w = size * scale_min / in_width * math.sqrt(ratio) / 2
+                h = size * scale_min / in_height / math.sqrt(ratio) / 2
+                boxes.append((center_x-w, center_y-h, center_x+w, center_y+h))
+            size = sizes[0]
+            for j in range(1, num_ratios):
+                ratio = math.sqrt(ratios[j])
+                w = size * scale_min / in_width * ratio / 2
+                h = size * scale_min / in_height / ratio / 2
+                boxes.append((center_x-w, center_y-h, center_x+w, center_y+h))
+    return torch.Tensor(boxes)
 
 def MultiBoxTarget(class_true, bb_true, anchors):
     
@@ -595,26 +668,72 @@ def MultiBoxTarget(class_true, bb_true, anchors):
     
     overlap_coordinates = torch.zeros_like(anchors)
     
+    offsets = torch.zeros_like(anchors)
+    ux, uy, uw, uh=0, 0, 0, 0
+    delta_x, delta_y = 0.1, 0.1
+    delta_w, delta_h = 0.2, 0.2
     for j in range(len(overlap_list)):
         overlap = overlap_list[j]
         class_target[overlap] = class_true[j, 0]
         overlap_coordinates[overlap] = 1.
-        
+        for m in overlap:
+            xb1, yb1, xb2, yb2 = bb_true[class_target[m]-1,:]
+            xb,yb,wb,hb = (xb1+xb2)/2,(yb1+yb2)/2,xb2-xb1,yb2-yb1
+#             print(xb,yb,wb,hb)
+            xa1, ya1, xa2, ya2 = anchors[m, :]
+            xa,ya,wa,ha = (xa1+xa2)/2,(ya1+ya2)/2,xa2-xa1,ya2-ya1
+#             print(xa,ya,wa,ha)
+#             print("offsets[m]",offsets[m])
+            offsets[m] = torch.tensor([((xb-xa)/wa-ux)/delta_x, ((yb-ya)/ha-uy)/delta_y, (torch.log(wb/wa)-uw)/delta_w, ((torch.log(hb/ha)-uh)/delta_h)])
         
     
-    new_anchors = torch.cat([*anchors])
+    new_anchors = torch.cat([*offsets])
     overlap_coordinates = torch.cat([*overlap_coordinates])
+
+    
+    
     new_anchors = new_anchors*overlap_coordinates
     
     return (new_anchors.unsqueeze(0), overlap_coordinates.unsqueeze(0), class_target.unsqueeze(0))
 
 
-def MultiboxDetection(id_cat, cls_probs, anchors, nms_threshold):
+# def MultiboxDetection(id_cat, cls_probs, anchors, nms_threshold):
 
-    id_new = dict()
-    id_new[0] = 'background'
-    for i in (id_cat.keys()):
-        id_new[i+1] = id_cat[i]
+#     id_new = dict()
+#     id_new[0] = 'background'
+#     for i in (id_cat.keys()):
+#         id_new[i+1] = id_cat[i]
+
+#     cls_probs = cls_probs.transpose(0,1)
+
+#     prob, class_id = torch.max(cls_probs,1)
+
+#     prob = prob.detach().cpu().numpy()
+#     class_id = class_id.detach().cpu().numpy()
+
+#     output_bb = [d2l.PredBoundingBox(probability=prob[i],
+#                                      class_id=class_id[i],
+#                                      classname=id_new[class_id[i]],
+#                                      bounding_box=[anchors[i, 0], 
+#                                                    anchors[i, 1], 
+#                                                    anchors[i, 2], 
+#                                                    anchors[i, 3]])
+#                                      for i in range(0, len(prob))]
+
+#     filtered_bb = d2l.non_max_suppression(output_bb, nms_threshold)
+    
+#     out = []
+#     for bb in filtered_bb:
+#         out.append([bb.class_id-1, bb.probability, *bb.bounding_box])
+#     out = torch.Tensor(out)
+    
+#     return out
+def MultiboxDetection(cls_probs, offsets, anchors, nms_threshold):
+
+#     id_new = dict()
+#     id_new[0] = 'background'
+#     for i in (id_cat.keys()):
+#         id_new[i+1] = id_cat[i]
 
     cls_probs = cls_probs.transpose(0,1)
 
@@ -625,7 +744,7 @@ def MultiboxDetection(id_cat, cls_probs, anchors, nms_threshold):
 
     output_bb = [d2l.PredBoundingBox(probability=prob[i],
                                      class_id=class_id[i],
-                                     classname=id_new[class_id[i]],
+#                                      classname=id_new[class_id[i]],
                                      bounding_box=[anchors[i, 0], 
                                                    anchors[i, 1], 
                                                    anchors[i, 2], 
