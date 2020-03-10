@@ -5,13 +5,13 @@ import numpy as np
 
 __all__ = ['try_gpu', 'try_all_gpus', 'Benchmark', 'Timer', 'Accumulator']
 
-def try_gpu():
-    """If GPU is available, return torch.device as cuda:0; else return torch.device as cpu."""
-    if torch.cuda.is_available():
-        device = torch.device('cuda:0')
-    else:
-        device = torch.device('cpu')
-    return device
+# def try_gpu():
+#     """If GPU is available, return torch.device as cuda:0; else return torch.device as cpu."""
+#     if torch.cuda.is_available():
+#         device = torch.device('cuda:0')
+#     else:
+#         device = torch.device('cpu')
+#     return device
 
 # def try_all_gpus():
 #     """Return all available GPUs, or [torch device cpu] if there is no GPU."""
@@ -23,6 +23,28 @@ def try_gpu():
 #     else:
 #         devices = [torch.device('cpu')]
 #     return devices
+def try_gpu(mem_free_percentage=0.5):
+    import pynvml
+    pynvml.nvmlInit()
+    """If GPU is available, return torch.device as cuda:0; else return torch.device as cpu."""
+    if torch.cuda.is_available():
+        best_device_index = 0
+        max_usage_percentage = 0.0
+        for i in range(torch.cuda.device_count()):
+            handle = pynvml.nvmlDeviceGetHandleByIndex(i)
+            meminfo = pynvml.nvmlDeviceGetMemoryInfo(handle)
+            cur_percentage = meminfo.free*1.0/meminfo.total
+            if cur_percentage > mem_free_percentage:
+                best_device_index = i
+                break
+            if cur_percentage > max_usage_percentage:
+                best_device_index = i
+                max_usage_percentage = cur_percentage
+        device = torch.device('cuda:'+str(best_device_index))
+    else:
+        device = torch.device('cpu')
+    return device
+
 def try_all_gpus():
     """Return all available GPUs, or [torch device cpu] if there is no GPU."""
     if torch.cuda.is_available():

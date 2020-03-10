@@ -156,9 +156,10 @@ num_ftrs = finetune_net.fc.in_features
 finetune_net.fc = torch.nn.Linear(num_ftrs, 2)
 ignored_params = list(map(id, finetune_net.fc.parameters())) #layer need to be trained
 base_params = filter(lambda p: id(p) not in ignored_params,finetune_net.parameters())
+lr=0.01
 optimizer = torch.optim.SGD([
     {'params': base_params},
-    {'params': finetune_net.fc.parameters(), 'lr': 0.01*0.1}], 0.01)
+    {'params': finetune_net.fc.parameters(), 'lr': lr*10}], lr=lr)
 ```
 
 ### 微调模型

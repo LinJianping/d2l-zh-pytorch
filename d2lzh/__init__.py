@@ -4,4 +4,4 @@ from .data import *
 from .model import *
 from .train import *
 from .ssd_utils import *
-__version__ = '0.8.11'
+__version__ = '0.8.12'

@@ -22,18 +22,6 @@ from collections import namedtuple
 import cv2
 from IPython import display
 
-##################################### MXNet Functions #################################################
-import mxnet as mx
-from mxnet import nd
-def try_gpu():
-    """If GPU is available, return mx.gpu(0); else return mx.cpu()."""
-    try:
-        ctx = mx.gpu()
-        _ = nd.array([0], ctx=ctx)
-    except mx.base.MXNetError:
-        ctx = mx.cpu()
-    return ctx
-
 ##################################### Display Functions #################################################
 
 # Defined in file: ./chapter_crashcourse/probability.md
@@ -118,18 +106,16 @@ def invert_transformation(bb_hat, anchors):
                         anchors[:, 3] * torch.exp(bb_hat[:, 3])
                         ], dim=1)
 
-def non_max_suppression(bounding_boxes: list, iou_threshold: float = 0.1) -> list:
+def non_max_suppression(bounding_boxes:list, iou_threshold:float=0.1) -> list:
     filtered_bb = []
-
     while len(bounding_boxes) != 0:
         best_bb = bounding_boxes.pop(0)
         filtered_bb.append(best_bb)
-
+        
         remove_items = []
         for bb in bounding_boxes:
-            iou = jaccard(torch.tensor(best_bb.bounding_box).unsqueeze(0), 
-                          torch.tensor(bb.bounding_box).unsqueeze(0))
-
+            iou = jaccard(torch.tensor(best_bb.bounding_box).unsqueeze(0),
+                         torch.tensor(bb.bounding_box).unsqueeze(0))
             if iou > iou_threshold:
                 remove_items.append(bb)
         bounding_boxes = [bb for bb in bounding_boxes if bb not in remove_items]
@@ -394,6 +380,7 @@ def download_and_preprocess_data(dir = '../data/pikachu/'):
 
 ################################################## PyTorch Dataloader for PIKACHU dataset ########################################################
 
+# Create Dataloaders in Pytorch 
 class PIKACHU(torch.utils.data.Dataset):
     def __init__(self, data_dir, set, transform=None, target_transform=None):
         
@@ -416,20 +403,13 @@ class PIKACHU(torch.utils.data.Dataset):
         image_path = os.path.join(self.images_dir, annotations_i['image'])
         img = np.array(Image.open(image_path).convert('RGB').resize((self.image_size[2], self.image_size[1]), Image.BILINEAR))
         # print(img.shape)
-        loc = np.array(annotations_i['loc'])
         
-        loc_chw = np.zeros((4,))
-        loc_chw[0] = (loc[0] + loc[2])/2
-        loc_chw[1] = (loc[1] + loc[3])/2
-        loc_chw[2] = (loc[2] - loc[0])  #width
-        loc_chw[3] = (loc[3] - loc[1])  # height
-        
-
-        label = 1 - annotations_i['class']
+        label = torch.tensor((annotations_i['class'], *annotations_i['loc']))
+        label = label.reshape((1,5))
     
         if self.transform is not None:
             img = self.transform(img)       
-        return (img, loc_chw, label)
+        return (img, label)
 
     def __len__(self):
         return len(self.annotations)
@@ -494,43 +474,32 @@ def center_2_hw(box: torch.Tensor) -> float:
          box[:, 1, None] + box[:, 3, None]/2
          ], dim=1)
 
-def intersect(box_a: torch.Tensor, box_b: torch.Tensor) -> float:
-    # Coverting (cx, cy, w, h) to (x1, y1, x2, y2) since its easier to extract min/max coordinates
-#     temp_box_a, temp_box_b = center_2_hw(box_a), center_2_hw(box_b)
-    temp_box_a, temp_box_b = box_a, box_b
-    
-#     print(temp_box_a.shape)
-    
-    max_xy = torch.min(temp_box_a[:, None, 2:], temp_box_b[None, :, 2:])
-    min_xy = torch.max(temp_box_a[:, None, :2], temp_box_b[None, :, :2])
-    
+def intersect(box_a:torch.Tensor, box_b:torch.Tensor) -> float:
+    max_xy = torch.min(box_a[:, None, 2:], box_b[None, :, 2:])
+    min_xy = torch.max(box_a[:, None, :2], box_b[None, :, :2])
     inter = torch.clamp((max_xy - min_xy), min=0)
-    return inter[:, :, 0] * inter[:, :, 1]
+    return inter[:,:,0] * inter[:,:,1]
 
-def box_area(box: torch.Tensor) -> float:
-#     return box[:, 2] * box[:, 3]
-    return (box[:, 2]-box[:, 0]) * (box[:, 3]-box[:, 1])
+def box_area(box:torch.Tensor) -> float:
+    return (box[:,2]-box[:,0])*(box[:,3]-box[:,1])
 
-def jaccard(box_a: torch.Tensor, box_b: torch.Tensor) -> float:
-#     print(box_a.shape)
+def jaccard(box_a:torch.Tensor, box_b:torch.Tensor) -> float:
     intersection = intersect(box_a, box_b)
     union = box_area(box_a).unsqueeze(1) + box_area(box_b).unsqueeze(0) - intersection
-    return intersection / union
+    return intersection/union
 
 def find_overlap(bb_true_i, anchors, jaccard_overlap):
-
     jaccard_tensor = jaccard(anchors, bb_true_i)
     _, max_overlap = torch.max(jaccard_tensor, dim=0)
     
-    overlap_list = []    
+    overlap_list = []
     for i in range(len(bb_true_i)):
-        threshold_overlap = (jaccard_tensor[:, i] > jaccard_overlap).nonzero()
-
-        if len(threshold_overlap) > 0:
+        threshold_overlap = (jaccard_tensor[:, i] > jaccard_overlap).nonzero() #find the union over threshold
+        if len(threshold_overlap) > 0:#have more than 1 box over threshold
             threshold_overlap = threshold_overlap[:, 0]
             overlap = torch.cat([max_overlap[i].view(1), threshold_overlap])
-            overlap = torch.unique(overlap)     
-        else:
+            overlap = torch.unique(overlap)
+        else: #doesnot have box over threshold, remain box have max intersection
             overlap = max_overlap[i].view(1)
         overlap_list.append(overlap)
     return overlap_list
@@ -570,223 +539,131 @@ def load(model, path_to_checkpoint, optimizer):
 
 import itertools
 import math
-# def MultiBoxPrior(feature_map_sizes, sizes, aspect_ratios):
-#     """Compute default box sizes with scale and aspect transform."""
-    
-#     sizes = [s*728 for s in sizes]
-    
-#     scale = feature_map_sizes
-#     steps_y = [1 / scale[0]]
-#     steps_x = [1 / scale[1]]
-    
-#     sizes = [s / max(scale) for s in sizes]
-    
-#     num_layers = 1
 
-#     boxes = []
-#     for i in range(num_layers):
-#         for h, w in itertools.product(range(feature_map_sizes[0]), range(feature_map_sizes[1])):
-#             cx = (w + 0.5)*steps_x[i]
-#             cy = (h + 0.5)*steps_y[i]
-            
-#             for j in range(len(sizes)):
+def MultiBoxPrior(feature_map, sizes, ratios):
+    feature_map_size = feature_map.size()
+    feature_map_height = feature_map_size[-2]
+    feature_map_width = feature_map_size[-1]
 
-#                 s = sizes[j]
-#                 boxes.append((cx, cy, s, s))
+    boxes = [] 
+    for h,w in itertools.product(range(feature_map_height), range(feature_map_width)):
+        for i in range(len(sizes)):
+            height = sizes[i]*feature_map_height/math.sqrt(ratios[0])
+            width = sizes[i]*feature_map_height*math.sqrt(ratios[0])
+            hl = h + 0.5 - height/2
+            hr = h + 0.5 + height/2
+            wl = w + 0.5 - width/2
+            wr = w + 0.5 + width/2
+            boxes.append((wl/feature_map_width, hl/feature_map_height, wr/feature_map_width, hr/feature_map_height))
+        for i in range(1, len(ratios)):
+            height = sizes[0]*feature_map_height/math.sqrt(ratios[i])
+            width = sizes[0]*feature_map_height*math.sqrt(ratios[i])
+            hl = h + 0.5 - height/2
+            hr = h + 0.5 + height/2
+            wl = w + 0.5 - width/2
+            wr = w + 0.5 + width/2
+            boxes.append((wl/feature_map_width, hl/feature_map_height, wr/feature_map_width, hr/feature_map_height))
 
-#             s = sizes[0]
-            
-#             for ar in aspect_ratios:
-               
-#                 boxes.append((cx, cy, (s * math.sqrt(ar)), (s / math.sqrt(ar))))
-
-#     return torch.Tensor(boxes) 
-
-def MultiBoxPrior(data=None, sizes=[1], ratios=[1], clip=False, steps=[-1,-1], offsets=[0.5, 0.5]):
-    '''
-    Parameters:
-    data (Tensor) – Input data.
-
-    sizes (tuple of <float>, optional, default=[1]) – List of sizes of generated MultiBoxPriores.
-
-    ratios (tuple of <float>, optional, default=[1]) – List of aspect ratios of generated MultiBoxPriores.
-
-    clip (boolean, optional, default=0) – Whether to clip out-of-boundary boxes.
-
-    steps (tuple of <float>, optional, default=[-1,-1]) – Priorbox step across y and x, -1 for auto calculation.
-
-    offsets (tuple of <float>, optional, default=[0.5,0.5]) – Priorbox center offsets, y and x respectively
-
-    out (Tensor, optional) – The output Tensor to hold the result.
-
-    Returns
-    out – The output of this function.
-
-    Return type
-    Tensor or list of Tensor
-    '''
-    in_height = data.shape[-2]
-    in_width = data.shape[-1]
-    step_x = steps[1]
-    step_y = steps[0]
-    if steps[0] == -1:
-        step_y = 1 / in_height
-    if steps[1] == -1:
-        step_x = 1 / in_width
-    scale_min = min(in_height, in_width)
-
-    num_sizes = len(sizes)
-    num_ratios = len(ratios)
-
-    boxes = []
-    
-    for r in range(in_height):
-        center_y = (r + offsets[0]) * step_y
-        for c in range(in_width):
-            center_x = (c + offsets[1]) * step_x
-            ratio = math.sqrt(ratios[0]) if num_ratios > 0 else 1.0
-            for i in range(num_sizes):
-                size = sizes[i]
-                w = size * scale_min / in_width * math.sqrt(ratio) / 2
-                h = size * scale_min / in_height / math.sqrt(ratio) / 2
-                boxes.append((center_x-w, center_y-h, center_x+w, center_y+h))
-            size = sizes[0]
-            for j in range(1, num_ratios):
-                ratio = math.sqrt(ratios[j])
-                w = size * scale_min / in_width * ratio / 2
-                h = size * scale_min / in_height / ratio / 2
-                boxes.append((center_x-w, center_y-h, center_x+w, center_y+h))
+    boxes = np.array(boxes)
+    boxes = boxes[np.newaxis, :]
     return torch.Tensor(boxes)
 
-def MultiBoxTarget(class_true, bb_true, anchors):
+def MultiBoxTarget(anchor, label, cls_pred):
+    anchor_sizes = anchor.size()
+    batch_size = anchor_sizes[0]
+    anchor_size = anchor_sizes[1]
+    total_offsets = []
+    total_overlap_coordinates = []
+    total_class_target = []
+    ux,uy,uw,uh = 0,0,0,0
+    delta_x, delta_y = 0.1,0.1 
+    delta_w, delta_h = 0.2,0.2
     
-    class_true +=1
-    
-    class_target = torch.zeros(anchors.shape[0]).long()
+    for i in range(batch_size):
+        class_true = label[i,:,0].clone()
+        bb_true = label[i,:,1:].clone()
+        anchors = anchor[i]
+        class_true += 1
+        class_target = torch.zeros(anchor_size).long()
+        overlap_list = find_overlap(bb_true, anchors, 0.5)
+        overlap_coordinates = torch.zeros_like(anchors)
+        offset = torch.zeros_like(anchors)
+        for j in range(len(overlap_list)):
+            overlap = overlap_list[j]
+            class_label = class_true[j].long()
+            class_target[overlap] = class_label
+            overlap_coordinates[overlap] = 1.
+            for box_index in overlap:
+                print("bb_true:", bb_true)
+                xl,yl,xr,yr = bb_true[class_label-1]
+                xb = (xl+xr)/2
+                yb = (yl+yr)/2
+                wb = xr-xl
+                hb = yr-yl
+                xl,yl,xr,yr = anchors[box_index]
+                xa = (xl+xr)/2
+                ya = (yl+yr)/2
+                wa = xr-xl
+                ha = yr-yl
+#                 print("offset[box_index]", offset[box_index])
+                offset[box_index]=torch.tensor([((xb-xa)/wa-ux)/delta_x,((yb-ya)/ha-uy)/delta_y,(torch.log(wb/wa)-uw)/delta_w,(torch.log(hb/ha)-uh)/delta_h])      
+        new_offsets = torch.cat([*offset])
+        overlap_coordinates = torch.cat([*overlap_coordinates])
+        total_offsets.append(new_offsets)
+        total_overlap_coordinates.append(overlap_coordinates)
+        total_class_target.append(class_target)
+    return (total_offsets, total_overlap_coordinates, total_class_target)  
 
-    overlap_list = d2l.find_overlap(bb_true, anchors, 0.5)
-    
-    overlap_coordinates = torch.zeros_like(anchors)
-    
-    offsets = torch.zeros_like(anchors)
-    ux, uy, uw, uh=0, 0, 0, 0
-    delta_x, delta_y = 0.1, 0.1
-    delta_w, delta_h = 0.2, 0.2
-    for j in range(len(overlap_list)):
-        overlap = overlap_list[j]
-        class_target[overlap] = class_true[j, 0]
-        overlap_coordinates[overlap] = 1.
-        for m in overlap:
-            xb1, yb1, xb2, yb2 = bb_true[class_target[m]-1,:]
-            xb,yb,wb,hb = (xb1+xb2)/2,(yb1+yb2)/2,xb2-xb1,yb2-yb1
-#             print(xb,yb,wb,hb)
-            xa1, ya1, xa2, ya2 = anchors[m, :]
-            xa,ya,wa,ha = (xa1+xa2)/2,(ya1+ya2)/2,xa2-xa1,ya2-ya1
-#             print(xa,ya,wa,ha)
-#             print("offsets[m]",offsets[m])
-            offsets[m] = torch.tensor([((xb-xa)/wa-ux)/delta_x, ((yb-ya)/ha-uy)/delta_y, (torch.log(wb/wa)-uw)/delta_w, ((torch.log(hb/ha)-uh)/delta_h)])
-        
-    
-    new_anchors = torch.cat([*offsets])
-    overlap_coordinates = torch.cat([*overlap_coordinates])
-
-    
-    
-    new_anchors = new_anchors*overlap_coordinates
-    
-    return (new_anchors.unsqueeze(0), overlap_coordinates.unsqueeze(0), class_target.unsqueeze(0))
-
-
-# def MultiboxDetection(id_cat, cls_probs, anchors, nms_threshold):
-
-#     id_new = dict()
-#     id_new[0] = 'background'
-#     for i in (id_cat.keys()):
-#         id_new[i+1] = id_cat[i]
-
-#     cls_probs = cls_probs.transpose(0,1)
-
-#     prob, class_id = torch.max(cls_probs,1)
-
-#     prob = prob.detach().cpu().numpy()
-#     class_id = class_id.detach().cpu().numpy()
-
-#     output_bb = [d2l.PredBoundingBox(probability=prob[i],
-#                                      class_id=class_id[i],
-#                                      classname=id_new[class_id[i]],
-#                                      bounding_box=[anchors[i, 0], 
-#                                                    anchors[i, 1], 
-#                                                    anchors[i, 2], 
-#                                                    anchors[i, 3]])
-#                                      for i in range(0, len(prob))]
-
-#     filtered_bb = d2l.non_max_suppression(output_bb, nms_threshold)
-    
-#     out = []
-#     for bb in filtered_bb:
-#         out.append([bb.class_id-1, bb.probability, *bb.bounding_box])
-#     out = torch.Tensor(out)
-    
-#     return out
-def MultiboxDetection(cls_probs, offsets, anchors, nms_threshold):
-
-#     id_new = dict()
-#     id_new[0] = 'background'
-#     for i in (id_cat.keys()):
-#         id_new[i+1] = id_cat[i]
-
-    cls_probs = cls_probs.transpose(0,1)
-
-    prob, class_id = torch.max(cls_probs,1)
-
-    prob = prob.detach().cpu().numpy()
-    class_id = class_id.detach().cpu().numpy()
-
-    output_bb = [d2l.PredBoundingBox(probability=prob[i],
-                                     class_id=class_id[i],
-#                                      classname=id_new[class_id[i]],
-                                     bounding_box=[anchors[i, 0], 
-                                                   anchors[i, 1], 
-                                                   anchors[i, 2], 
-                                                   anchors[i, 3]])
-                                     for i in range(0, len(prob))]
-
-    filtered_bb = d2l.non_max_suppression(output_bb, nms_threshold)
-    
-    out = []
-    for bb in filtered_bb:
-        out.append([bb.class_id-1, bb.probability, *bb.bounding_box])
-    out = torch.Tensor(out)
-    
-    return out
+def MultiboxDetection(cls_prob=None, loc_pred=None, anchor=None, nms_threshold=0.01):
+    total_out = []
+    for i in range(cls_prob.shape[0]):#batch size
+        cls_probs = cls_prob[i]
+        cls_probs = cls_probs.transpose(0,1)
+        anchors = anchor[i]
+        prob, class_id = torch.max(cls_probs,1)
+        prob = prob.detach().cpu().numpy()
+        class_id = class_id.detach().cpu().numpy()
+        output_bb = [PredBoundingBox(probability=prob[j],
+                                       class_id=class_id[j],
+                                       bounding_box=[anchors[j,0],anchors[j,1],anchors[j,2],anchors[j,3]]) 
+                     for j in range(len(prob))]
+        output_bb = sorted(output_bb, key = lambda x: x.probability, reverse=True)#sorted by probability
+        filtered_bb = non_max_suppression(output_bb, nms_threshold)
+        print("filtered_bb:", filtered_bb)
+        out = []
+        for bb in filtered_bb:
+            out.append([bb.class_id-1, bb.probability, *bb.bounding_box])
+        out = torch.Tensor(out)
+        total_out.append(out)
+    return total_out
 
 ############################ Functions for Multi-Scale Object Detection Jupyter Notebook ##########################
 
-# def bbox_to_rect(bbox, color):
-#     """Convert bounding box to matplotlib format."""
-#     return d2l.plt.Rectangle(xy=(bbox[0], bbox[1]), width=bbox[2]-bbox[0],
-#                          height=bbox[3]-bbox[1], fill=False, edgecolor=color,
-#                          linewidth=2)
+def bbox_to_rect(bbox, color):
+    """Convert bounding box to matplotlib format."""
+    return d2l.plt.Rectangle(xy=(bbox[0], bbox[1]), width=bbox[2]-bbox[0],
+                         height=bbox[3]-bbox[1], fill=False, edgecolor=color,
+                         linewidth=2)
 
-# def show_bboxes(axes, bboxes, labels=None, colors=None):
-#     """Show bounding boxes."""
-#     def _make_list(obj, default_values=None):
-#         if obj is None:
-#             obj = default_values
-#         elif not isinstance(obj, (list, tuple)):
-#             obj = [obj]
-#         return obj
-#     labels = _make_list(labels)
-#     colors = _make_list(colors, ['b', 'g', 'r', 'm', 'c'])
-#     for i, bbox in enumerate(bboxes):
-#         color = colors[i % len(colors)]
-#         rect = bbox_to_rect(bbox.numpy(), color)
-#         axes.add_patch(rect)
-#         if labels and len(labels) > i:
-#             text_color = 'k' if color == 'w' else 'w'
-#             axes.text(rect.xy[0], rect.xy[1], labels[i],
-#                       va='center', ha='center', fontsize=9, color=text_color,
-#                       bbox=dict(facecolor=color, lw=0))
+def show_bboxes(axes, bboxes, labels=None, colors=None):
+    def _make_list(obj, default_values=None):
+        if obj is None:
+            obj = default_values
+        elif not isinstance(obj, (list, tuple)):
+            obj = [obj]
+        return obj
+
+    labels = _make_list(labels)
+    colors = _make_list(colors, ['b', 'g', 'r', 'm', 'c'])
+    for i, bbox in enumerate(bboxes):
+        color = colors[i % len(colors)]
+        rect = bbox_to_rect(bbox.numpy(), color)
+        axes.add_patch(rect)
+        if labels and len(labels) > i:
+            text_color = 'k' if color == 'w' else 'w'
+            axes.text(rect.xy[0], rect.xy[1], labels[i],
+                      va='center', ha='center', fontsize=9, color=text_color,
+                      bbox=dict(facecolor=color, lw=0))
 
 def get_centers(h, w, fh, fw):
     step_x = int(w/fw)
